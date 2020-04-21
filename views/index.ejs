@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootswatch/4.4.1/darkly/bootstrap.min.css">
+    <title>Realtime Poll</title>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1> Messages </h1>
+        <br><br>
+        <div id="chart-container" style="height:300px;width:100%;">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th scope="col">Field</th>
+                        <th scope="col">Table</th>
+                        <th scope="col">Logical Time</th>
+                        <th scope="col">Value</th>
+                        <th scope="col">LastSynced</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <% for (var i = 0; i < messages.length; i++) { %>
+                    <tr>
+                        <td>
+                            <span style="text-align:left">
+                                <%= messages[i].mText.field %>
+                            </span>
+                        </td>
+                        <td>
+                            <span style="text-align:left">
+                                <%= messages[i].mText.table %>
+                            </span>
+                        </td>
+                        <td>
+                            <span style="text-align:left">
+                                <%= messages[i].mText.logicalTime %>
+                            </span>
+                        </td>
+                        <td>
+                            <span style="text-align:left">
+                                <%= messages[i].mText.value %>
+                            </span>
+                        </td>
+                        <td>
+                            <span style="text-align:left">
+                                <%= messages[i].lastSynced %>
+                            </span>
+                        </td>
+                    </tr>
+                    <% } 
+                    %>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+
+
+</body>
+
+</html>

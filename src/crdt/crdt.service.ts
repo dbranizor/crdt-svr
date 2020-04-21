@@ -1,18 +1,25 @@
 import { Injectable } from "@nestjs/common";
-import { LeedsMerkle, SvrSync, SvrSyncMsg, SvrMessage, ClientSyncMsg, MerkleCrdtMsg, MerkleCrdt, Merkle, ClientReSyncMsg, ClientReSync, crdtMerkleToMsgMapper } from "@derekbranizor/leeds-rel2itivetypes"
-
+import { SvrSync, SvrSyncMsg, SvrMessage, ClientSyncMsg, MerkleCrdtMsg, ClientReSyncMsg } from "@derekbranizor/leeds-rel2itivetypes"
+/**TODO: Remove after debugging */
+import { LeedsMerkle } from './temp.merkle';
+import { Observable, BehaviorSubject } from 'rxjs'
 
 @Injectable()
 export class CrdtService {
     constructor() { }
-    private userMaps: Map<String, any> = new Map();
+    public userMaps: Map<String, any> = new Map();
     private merkleTree: LeedsMerkle = null;
     public exchangeMsg(clientMessage: ClientSyncMsg): SvrSyncMsg {
 
         // If first set map and apply messages
         if (!this.userMaps.has(clientMessage.mTYpe)) {
-            this.userMaps.set(clientMessage.mTYpe, clientMessage.mText.new)
- 
+
+            let messageMap = clientMessage.mText.new.reduce((acc, curr) => {
+                curr['lastSynced'] = clientMessage.mText.lastSync;
+                acc[curr.mTYpe] = curr;
+                return acc;
+            }, {})
+            this.userMaps.set(clientMessage.mTYpe, messageMap);
             this.merkleTree = new LeedsMerkle(clientMessage.mText.new);
             return {
                 mTYpe: SvrMessage.SyncResponse,
@@ -25,83 +32,75 @@ export class CrdtService {
 
 
 
-        // 1 get client messages that aren't duplicates into flatt array
-
-        // 2 get server messages into flat array
-
-        // 3 filter messages newer then last time stamp
-
-        // Update server messages with client messages that have greater logical counter
-
-        // Merge in new messages
-
-        // send messages + erkle to client
-
-        // add 1 to messages.
-        let serverGroupMessages: MerkleCrdtMsg[] = this.userMaps.get(clientMessage.mTYpe);
+        // 1 get client messages Map
+        // 2 Get server messages into flat array for sorting and filtering
+        // 3 Sort messages oldest first
+        // 4 Filter out older messages and get list of messages that have not been synced with client into seperate collection
+        // 5 Update server messages with client messages and set group messages.
+        // 6 Set client messages map
+        // 7 Set Merkle Tree with NEW flat array of merkle updates
+        // 8 Set syncServerMessage with new messages and computed merkle tree
 
 
-        /** Get client messages that are dupe's */
-        const goodMessages: MerkleCrdt[] = clientMessage.mText.new.map(s => s.mText);
+        // 1 Get client messages map
+        let serverGroupMessagesMap = this.userMaps.get(clientMessage.mTYpe)
 
-        /**get server messages into flat array */
-        let serverGroupCrdts: MerkleCrdt[] = Object.keys(serverGroupMessages).reduce((acc, curr) => {
-            acc = [...acc, serverGroupMessages[curr].mText];
+
+        /**2 get server messages into flat array */
+        let serverGroupMsgList: MerkleCrdtMsg[] = Object.keys(serverGroupMessagesMap).reduce((acc, curr) => {
+            acc = [...acc, serverGroupMessagesMap[curr]];
             return acc;
         }, []);
 
-        // filter messages newer then last time stamp
-        let lastSyncedCrdts: MerkleCrdt[] = serverGroupCrdts.filter(s => s.logicalTime > clientMessage.mText.lastSync);
-
-        // Update erver messages with client messages
-        serverGroupCrdts = serverGroupCrdts.reduce<MerkleCrdt[]>((acc, curr) => {
-            const updateMessage: MerkleCrdt = goodMessages.find(g => g.id === curr.id);
-            if (updateMessage && curr.logicalCounter < updateMessage.logicalCounter) {
-                acc = [...acc, updateMessage];
-            } else {
-                acc = [...acc, curr]
-            }
-            return acc;
-        }, []);
-
-        // Add new client messages
-        let newClientMessages: MerkleCrdt[] = goodMessages.filter(m => !serverGroupCrdts.some(s => s.id === m.id));
-
-        serverGroupCrdts = [...serverGroupCrdts, ...newClientMessages];
-
-        // sort messages oldest first
-        serverGroupCrdts.sort((a, b) => {
-            return a.logicalTime - b.logicalTime;
+        // 3 sort messages oldest first
+        serverGroupMsgList.sort((a, b) => {
+            return a.mText.logicalTime - b.mText.logicalTime;
         })
 
 
-        // set messages
-        serverGroupMessages = serverGroupCrdts.map<MerkleCrdtMsg>((s) => {
-            return {
-                mTYpe: clientMessage.mTYpe,
-                mText: s
+        // 4 filter sorted messages newer then last time stamp
+        let lastSyncedCrdts: MerkleCrdtMsg[] = serverGroupMsgList.filter(s => s.clock.logicalTime > clientMessage.mText.lastSync);
 
+
+        //5 Update server messages with client messages and set group messages
+        clientMessage.mText.new.forEach(m => {
+            m['lastSynced'] = clientMessage.mText.lastSync;
+            if (!serverGroupMessagesMap[m.mTYpe]) {
+                serverGroupMessagesMap[m.mTYpe] = m
+                serverGroupMessagesMap[m.mTYpe]['lastSynced'] = clientMessage.mText.lastSync;
+            } else {
+                const message: MerkleCrdtMsg = serverGroupMessagesMap[m.mTYpe];
+                // TODO: Should last-write win here (=)? Is this ever going to be an issue minus tests?
+                if (message.mText.logicalCounter <= m.clock.logicalCounter) {
+                    serverGroupMessagesMap[m.mTYpe] = m
+                }
             }
         });
-        this.userMaps.set(clientMessage.mTYpe, serverGroupMessages);
+
+        // 6 Update serverGroupMessageList with client updates
+        let updatedGroupMsgList: MerkleCrdtMsg[] = Object.keys(serverGroupMessagesMap).reduce((acc, curr) => {
+            acc = [...acc, serverGroupMessagesMap[curr]];
+            return acc;
+        }, []);
+
+        // 7 Sort with new messagesf
+        updatedGroupMsgList.sort((a, b) => a.clock.logicalTime - b.clock.logicalTime);
+
+        //  8 set client messages map  
+        this.userMaps.set(clientMessage.mTYpe, serverGroupMessagesMap);
+
 
         // set svrsync message data
-        const computedMerkleTree = new LeedsMerkle(serverGroupMessages);
-        const svrSync: SvrSync = {
-            merkleTree: computedMerkleTree.getTree().getLayersAsObject(),
-            new: lastSyncedCrdts.map<MerkleCrdtMsg>((s) => {
-                return {
-                    mTYpe: clientMessage.mTYpe,
-                    mText: s
+        this.merkleTree = new LeedsMerkle(updatedGroupMsgList);
+        // Give client a merkle tree without only new updates
+        let clientMsgMerkleTree = new LeedsMerkle(serverGroupMsgList);
 
-                }
-            })
+        // Build server-sync message with new merkle-tree and new messages
+        const svrSync: SvrSync = {
+            merkleTree: clientMsgMerkleTree.getTree().getLayersAsObject(),
+            new: lastSyncedCrdts
         }
 
-        // Update merkle
-        this.merkleTree = new LeedsMerkle(serverGroupMessages);
-
-        // return compiled merkle
         return {
             mTYpe: SvrMessage.SyncResponse,
             mText: svrSync
@@ -115,18 +114,19 @@ export class CrdtService {
         }
 
         // get group crdts
-        let messages: MerkleCrdtMsg[] = this.userMaps.get(clientRsyn.mTYpe);
-        let svcCrdts = messages.map(s => s.mText) as any;
+        let messageHash: MerkleCrdtMsg[] = this.userMaps.get(clientRsyn.mTYpe);
+        let svcCrdts: MerkleCrdtMsg[] = Object.keys(messageHash).map(s => messageHash[s]);
 
 
         // get back range of CRDTs
-        let lastSyncedCrdts: MerkleCrdt[] = svcCrdts.filter(s => s.logicalTime > clientRsyn.mText.rannge.first && s.logicalTime < clientRsyn.mText.rannge.last);
+        let lastSyncedCrdts: MerkleCrdtMsg[] = svcCrdts.filter(s => s.mText.logicalTime > clientRsyn.mText.rannge.first && s.mText.logicalTime < clientRsyn.mText.rannge.last)
+            ;
 
         // Compute a merkle tree and make a sync response object
-        const computedMerkleTree = new LeedsMerkle(messages);
+        const computedMerkleTree = new LeedsMerkle(svcCrdts);
         const svrSync: SvrSync = {
             merkleTree: computedMerkleTree.getTree().getLayersAsObject(),
-            new: lastSyncedCrdts.map(crdtMerkleToMsgMapper)
+            new: lastSyncedCrdts
         }
 
         // return compiled merkle

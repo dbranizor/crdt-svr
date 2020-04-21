@@ -63,6 +63,6 @@ describe('Crdt Controller', () => {
     // let sync:SvrSyncMsg  = JSON.parse(syncResponse); 
     expect(syncResponse).toBeDefined();
     
-    expect(syncResponse.mText.merkleTree.getHexRoot()).toBeDefined();
+    expect(Object.keys(syncResponse.mText.merkleTree)[0]).toBeDefined();
   })
 });

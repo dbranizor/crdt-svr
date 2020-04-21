@@ -5,6 +5,7 @@ import { CrdtGateway } from './crdt.gateway';
 
 @Module({
   controllers: [CrdtController],
-  providers: [CrdtService, CrdtGateway]
+  providers: [CrdtService, CrdtGateway],
+  exports: [CrdtService]
 })
 export class CrdtModule {}
