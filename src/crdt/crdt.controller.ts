@@ -14,10 +14,17 @@ export class CrdtController {
         return msg
     }
 
-    @Put()
-    reSync(@Body() crdtSyncMsg: ClientReSyncMsg):any  {
+    @Post('/initiate')
+    init(@Body() crdtSyncMsg: ClientSyncMsg):any  {
         console.log('dingo getting sync response')
-        const msg: SvrSyncMsg = this.crdtService.resyncMsg(crdtSyncMsg)
+        const msg: SvrSyncMsg = this.crdtService.clientInitiatedSync(crdtSyncMsg)
+        return msg
+    }
+
+    @Post('/complete')
+    complete(@Body() crdtSyncMsg: ClientSyncMsg):any  {
+        console.log('dingo getting sync response')
+        const msg: SvrSyncMsg = this.crdtService.exchangeMsg(crdtSyncMsg)
         return msg
     }
 

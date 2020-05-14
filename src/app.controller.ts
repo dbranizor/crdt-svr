@@ -8,11 +8,14 @@ export class AppController {
 
   @Get()
   @Render('index')
-  getHello(): any {
+  get(): any {
     let messages: any[] = [];
     this.credtSvc.userMaps.forEach(m => {
       Object.keys(m).forEach(key => messages = [...messages, m[key]])
     })
     return {messages}
   }
+
+
+  
 }
