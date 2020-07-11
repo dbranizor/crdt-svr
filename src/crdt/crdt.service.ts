@@ -47,7 +47,7 @@ export class CrdtService {
         }
     }
 
-    public exchangeMsg(clientMessage): SvrSyncMsg {
+    public exchangeMsg(clientMessage: ClientSyncMsg): SvrSyncMsg {
 
 
 
@@ -76,6 +76,7 @@ export class CrdtService {
             } else {
                 const message: MerkleCrdtMsg = serverGroupMessagesMap[m.mTYpe];
                 // TODO: Should last-write win here (=)? Is this ever going to be an issue minus tests?
+    
                 if (message.mText.logicalCounter <= m.clock.logicalCounter) {
                     serverGroupMessagesMap[m.mTYpe] = m
                 }
@@ -133,8 +134,7 @@ export class CrdtService {
         
         return lastSyncedCrdts;
     }
-    
-    // 4 filter sorted messages newer then last time stamp
+
 
 
 
