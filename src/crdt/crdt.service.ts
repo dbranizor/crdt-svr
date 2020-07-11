@@ -6,12 +6,13 @@ import {
     ClientSyncMsg, 
     MerkleCrdtMsg,
 } from "@derekbranizor/leeds-rel2itivetypes"
+import { ClientCompleteSync } from "@derekbranizor/leeds-rel2itivetypes/dist/main";
 
 @Injectable()
 export class CrdtService {
     constructor() { }
     public userMaps: Map<String, any> = new Map();
-    private merkleTree: any = null;
+    private merkleTree: Map<String, any> = new Map();
 
     public clientInitiatedSync(clientMessage: ClientSyncMsg): SvrSyncMsg {
 
@@ -24,11 +25,11 @@ export class CrdtService {
                 return acc;
             }, {})
             this.userMaps.set(clientMessage.mTYpe, messageMap);
-            this.merkleTree =  clientMessage.mText.merkleTree || {};
+            this.merkleTree.set(clientMessage.mTYpe, clientMessage.mText.merkleTree || {});
             return {
                 mTYpe: SvrMessage.SyncResponse,
                 mText: {
-                    merkleTree: this.merkleTree,
+                    merkleTree: this.merkleTree.get(clientMessage.mTYpe),
                     new: []
                 }
             };
@@ -40,7 +41,7 @@ export class CrdtService {
         return {
             mTYpe: SvrMessage.SyncResponse,
             mText: {
-                merkleTree: this.merkleTree,
+                merkleTree: this.merkleTree.get(clientMessage.mTYpe),
                 new: newClientGroupMessages
             }
         }
@@ -52,7 +53,7 @@ export class CrdtService {
 
 
         /** Tree has been updated since the last successfull clientInitiatedSync. Resync again */
-        if((Object.keys(this.merkleTree)[0] || "") !== clientMessage.mText.previousMerkleTree){
+        if((Object.keys(this.merkleTree.get(clientMessage.mTYpe))[0] || "") !== clientMessage.mText.previousMerkleTree){
             return this.clientInitiatedSync(clientMessage);
         }
 
@@ -90,11 +91,11 @@ export class CrdtService {
         if(!clientMessage.mText.merkleTree){
             throw Error(`No Merkle Sent to Complete Sync!! ${JSON.stringify(clientMessage)}`)
         }
-        this.merkleTree = clientMessage.mText.merkleTree 
+        this.merkleTree.set(clientMessage.mTYpe, clientMessage.mText.merkleTree ); 
 
         // Build server-sync message with new merkle-tree and new messages
         const svrSync: SvrSync = {
-            merkleTree: this.merkleTree,
+            merkleTree: this.merkleTree.get(clientMessage.mTYpe),
             new: []
         }
 

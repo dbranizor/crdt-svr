@@ -23,6 +23,7 @@
                         <th scope="col">Logical Time</th>
                         <th scope="col">Value</th>
                         <th scope="col">LastSynced</th>
+                        <th scope="col">row</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -51,7 +52,12 @@
                         </td>
                         <td>
                             <span style="text-align:left">
-                                <%= messages[i].lastSynced %>
+                                <%= messages[i].mText.lastSynced %>
+                            </span>
+                        </td>
+                        <td>
+                            <span style="text-align:left">
+                                <%= messages[i].mText.row %>
                             </span>
                         </td>
                     </tr>
