@@ -1,12 +1,12 @@
 import { Injectable } from "@nestjs/common";
-import { 
-    SvrSync, 
-    SvrSyncMsg, 
-    SvrMessage, 
-    ClientSyncMsg, 
+import {
+    SvrSync,
+    SvrSyncMsg,
+    SvrMessage,
+    ClientSyncMsg,
     MerkleCrdtMsg,
+    unpackHlc
 } from "@derekbranizor/leeds-rel2itivetypes"
-import { ClientCompleteSync } from "@derekbranizor/leeds-rel2itivetypes/dist/main";
 
 @Injectable()
 export class CrdtService {
@@ -19,12 +19,8 @@ export class CrdtService {
         // If first set map and apply messages
         if (!this.userMaps.has(clientMessage.mTYpe)) {
 
-            let messageMap = clientMessage.mText.new.reduce((acc, curr) => {
-                // curr['lastSynced'] = clientMessage.mText.lastSync;
-                acc[curr.mTYpe] = curr;
-                return acc;
-            }, {})
-            this.userMaps.set(clientMessage.mTYpe, messageMap);
+            let messageList = [...clientMessage.mText.new]
+            this.userMaps.set(clientMessage.mTYpe, messageList);
             this.merkleTree.set(clientMessage.mTYpe, clientMessage.mText.merkleTree || {});
             return {
                 mTYpe: SvrMessage.SyncResponse,
@@ -47,13 +43,13 @@ export class CrdtService {
         }
     }
 
-    public exchangeMsg(clientMessage: ClientSyncMsg): SvrSyncMsg {
+    public exchangeMsg(clientMessage): SvrSyncMsg {
 
 
 
 
         /** Tree has been updated since the last successfull clientInitiatedSync. Resync again */
-        if((Object.keys(this.merkleTree.get(clientMessage.mTYpe))[0] || "") !== clientMessage.mText.previousMerkleTree){
+        if ((Object.keys(this.merkleTree.get(clientMessage.mTYpe) || [])[0] || "") !== clientMessage.mText.previousMerkleTree) {
             return this.clientInitiatedSync(clientMessage);
         }
 
@@ -64,35 +60,50 @@ export class CrdtService {
 
 
         // 1 Get client messages map
-        let serverGroupMessagesMap = this.userMaps.get(clientMessage.mTYpe)
+        let serverGroupMessageList = this.userMaps.get(clientMessage.mTYpe)
 
 
         //2 Update server messages with client messages and set group messages
         clientMessage.mText.new.forEach(m => {
             // m['lastSynced'] = clientMessage.mText.lastSync;
-            if (!serverGroupMessagesMap[m.mTYpe]) {
-                serverGroupMessagesMap[m.mTYpe] = m
+            const crdtIndex = serverGroupMessageList.findIndex(smsg => smsg.id === m.mText.id);
+            if (crdtIndex < 0) {
+                serverGroupMessageList = [...serverGroupMessageList, m.mText]
+                console.log('dingo')
                 // serverGroupMessagesMap[m.mTYpe]['lastSynced'] = clientMessage.mText.lastSync;
             } else {
-                const message: MerkleCrdtMsg = serverGroupMessagesMap[m.mTYpe];
+                const message = serverGroupMessageList[crdtIndex];
                 // TODO: Should last-write win here (=)? Is this ever going to be an issue minus tests?
-    
-                if (message.mText.logicalCounter <= m.clock.logicalCounter) {
-                    serverGroupMessagesMap[m.mTYpe] = m
+
+                if(message.logicalTime === m.clock.logicalTime){
+                    if(message.logicalCounter === m.clock.logicalTime){
+                        if(m.id > message.id){
+                            serverGroupMessageList.splice(crdtIndex, 1, m.mText)
+                        }
+                    }
+
+                    if(m.clock.logicalCounter > message.logicalCounter){
+                        serverGroupMessageList.splice(crdtIndex, 1, m.mText)
+                    }
                 }
+                if(m.clock.logicalTime > message.logicalCounter){
+                    serverGroupMessageList.splice(crdtIndex, 1, m.mText)
+                }
+                
+                
             }
         });
 
 
         // 3 set client messages map  
-        this.userMaps.set(clientMessage.mTYpe, serverGroupMessagesMap);
+        this.userMaps.set(clientMessage.mTYpe, serverGroupMessageList);
 
 
         // 4  set svrsync message data
-        if(!clientMessage.mText.merkleTree){
+        if (!clientMessage.mText.merkleTree) {
             throw Error(`No Merkle Sent to Complete Sync!! ${JSON.stringify(clientMessage)}`)
         }
-        this.merkleTree.set(clientMessage.mTYpe, clientMessage.mText.merkleTree ); 
+        this.merkleTree.set(clientMessage.mTYpe, clientMessage.mText.merkleTree);
 
         // Build server-sync message with new merkle-tree and new messages
         const svrSync: SvrSync = {
@@ -111,28 +122,45 @@ export class CrdtService {
     // 2 Get server messages into flat array for sorting and filtering
     // 3 Sort messages oldest first
     // 4 Filter out older messages and get list of messages that have not been synced with client into seperate collection
-    private getGroupMessages(clientMessage: ClientSyncMsg): MerkleCrdtMsg[] {
-
+    private getGroupMessages(clientMessage): MerkleCrdtMsg[] {
 
         // 1 Get client messages map
-        let serverGroupMessagesMap = this.userMaps.get(clientMessage.mTYpe)
-
-
-        /**2 get server messages into flat array */
-        let serverGroupMsgList: MerkleCrdtMsg[] = Object.keys(serverGroupMessagesMap).reduce((acc, curr) => {
-            acc = [...acc, serverGroupMessagesMap[curr]];
-            return acc;
-        }, []);
+        let serverGroupMsgList: any[] = this.userMaps.get(clientMessage.mTYpe)
 
         // 3 sort messages oldest first
-        serverGroupMsgList.sort((a, b) => {
-            return a.mText.logicalTime - b.mText.logicalTime;
-        })
+        serverGroupMsgList.sort(this.cmp)
+        const {count, id, ts} = unpackHlc(clientMessage.mText.lastSync)
+        const lastSyncedCrdts = serverGroupMsgList.filter(s => {
 
+            //s.clock.logicalTime > clientMessage.mText.lastSync
+            console.log('dingo')
+            if(s.logicalTime === ts){
+                if(s.logicalCounter === count){
+                        return s.nodeID > id
+                }
+                return s.logicalCounter > count             
+            }
+            return s.logicalTime > ts
+        });
 
-        const lastSyncedCrdts: MerkleCrdtMsg[] = serverGroupMsgList.filter(s => s.clock.logicalTime > clientMessage.mText.lastSync);
-        
         return lastSyncedCrdts;
+
+    }
+
+    cmp(one, two) {
+        if (one.logicalTime === two.logicalTime) {
+            if (one.logicalCounter === two.logicalCounter) {
+                if(one.row === two.row){
+                    return 0
+                }
+                return one.row < two.row ? -1 : 1;
+            }
+
+
+            return one.logicalCounter - two.logicalCounter
+        }
+
+        return one.logicalTime - two.logicalTime
     }
 
 
