@@ -19,7 +19,7 @@ export class CrdtService {
         // If first set map and apply messages
         if (!this.userMaps.has(clientMessage.mTYpe)) {
 
-            let messageList = [...clientMessage.mText.new]
+            let messageList = [...clientMessage.mText.new.map(c => c.mText)]
             this.userMaps.set(clientMessage.mTYpe, messageList);
             this.merkleTree.set(clientMessage.mTYpe, clientMessage.mText.merkleTree || {});
             return {
@@ -63,37 +63,11 @@ export class CrdtService {
         let serverGroupMessageList = this.userMaps.get(clientMessage.mTYpe)
 
 
-        //2 Update server messages with client messages and set group messages
-        clientMessage.mText.new.forEach(m => {
-            // m['lastSynced'] = clientMessage.mText.lastSync;
-            const crdtIndex = serverGroupMessageList.findIndex(smsg => smsg.id === m.mText.id);
-            if (crdtIndex < 0) {
-                serverGroupMessageList = [...serverGroupMessageList, m.mText]
-                console.log('dingo')
-                // serverGroupMessagesMap[m.mTYpe]['lastSynced'] = clientMessage.mText.lastSync;
-            } else {
-                const message = serverGroupMessageList[crdtIndex];
-                // TODO: Should last-write win here (=)? Is this ever going to be an issue minus tests?
+        serverGroupMessageList = [...serverGroupMessageList, ...clientMessage.mText.new.map(c => c.mText)]
 
-                if(message.logicalTime === m.clock.logicalTime){
-                    if(message.logicalCounter === m.clock.logicalTime){
-                        if(m.id > message.id){
-                            serverGroupMessageList.splice(crdtIndex, 1, m.mText)
-                        }
-                    }
-
-                    if(m.clock.logicalCounter > message.logicalCounter){
-                        serverGroupMessageList.splice(crdtIndex, 1, m.mText)
-                    }
-                }
-                if(m.clock.logicalTime > message.logicalCounter){
-                    serverGroupMessageList.splice(crdtIndex, 1, m.mText)
-                }
-                
-                
-            }
-        });
-
+        serverGroupMessageList.sort((a, b) => {
+            return a.logicalTime - b.logicalTime;
+        })
 
         // 3 set client messages map  
         this.userMaps.set(clientMessage.mTYpe, serverGroupMessageList);
@@ -128,12 +102,14 @@ export class CrdtService {
         let serverGroupMsgList: any[] = this.userMaps.get(clientMessage.mTYpe)
 
         // 3 sort messages oldest first
-        serverGroupMsgList.sort(this.cmp)
+        // serverGroupMsgList.sort(this.cmp)
         const {count, id, ts} = unpackHlc(clientMessage.mText.lastSync)
+        serverGroupMsgList.sort((a, b) => {
+            return a.logicalTime - b.logicalTime;
+        })
         const lastSyncedCrdts = serverGroupMsgList.filter(s => {
 
             //s.clock.logicalTime > clientMessage.mText.lastSync
-            console.log('dingo')
             if(s.logicalTime === ts){
                 if(s.logicalCounter === count){
                         return s.nodeID > id
@@ -142,6 +118,8 @@ export class CrdtService {
             }
             return s.logicalTime > ts
         });
+
+
 
         return lastSyncedCrdts;
 
